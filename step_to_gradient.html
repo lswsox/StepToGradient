@@ -10,6 +10,7 @@
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,"Segoe UI","Malgun Gothic",sans-serif}
 header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 header h1{margin:0;font-size:17px;font-weight:600}
+.langbox{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12.5px;white-space:nowrap;cursor:default}
 header h1 .ver{margin-left:6px;font-size:12px;font-weight:500;color:var(--dim)}
 header p{margin:2px 0 0;color:var(--dim);font-size:12.5px}
 main{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
@@ -54,7 +55,7 @@ th{color:var(--dim);font-weight:500}
   <p>Sparse Threshold Gradient Reconstruction Tool</p>
   <p data-i="by">제작: 이상원</p>
   </div>
-  <select id="lang" aria-label="Language"><option value="ko">한국어</option><option value="en">English</option></select>
+  <label class="langbox">Language: <select id="lang"><option value="ko">한국어</option><option value="en">English</option></select></label>
 </header>
 <main>
   <div class="side">
