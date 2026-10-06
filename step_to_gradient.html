@@ -27,6 +27,7 @@ main{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
 .row{display:flex;align-items:center;gap:8px}
 .item{display:flex;align-items:center;gap:10px;padding:6px;border:1px solid var(--line);border-radius:6px;margin-top:6px;background:#191c21}
 .item img{width:52px;height:52px;object-fit:contain;background:#000;border-radius:4px;flex:none}
+.item .ph{width:52px;height:52px;background:#000;border-radius:4px;flex:none}
 .item .meta{flex:1;min-width:0}
 .item .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px}
 .item .sub{color:var(--dim);font-size:11.5px}
@@ -70,6 +71,7 @@ th{color:var(--dim);font-weight:500}
       <h2 data-i="hStep">STEP 이미지</h2>
       <div id="drop" data-i="drop">여기에 이미지를 드래그 앤 드롭<br>또는 클릭해서 선택 (여러 장)</div>
       <input id="file" type="file" accept="image/*" multiple hidden>
+      <div id="loadMsg" class="warn" style="margin-top:6px"></div>
       <div class="opt" style="margin-top:10px">
         <label><input type="checkbox" id="auto" checked> <span data-i="autoLabel">Auto 임계값 (균등 분배)</span></label>
         <button id="clear" data-i="clear">전체 삭제</button>
@@ -95,7 +97,7 @@ th{color:var(--dim);font-weight:500}
         <select id="curve"><option value="lin" data-i="cLin">선형</option><option value="smooth" data-i="cSmooth">스무스스텝</option></select></div>
       <div class="opt"><span data-i="blur">블러(σ px)</span><input type="range" id="blur" min="0" max="8" step="0.5" value="2"><span class="v" id="blurV">2</span></div>
       <div class="opt"><span data-i="fade">바깥 페이드</span><input type="range" id="fade" min="0" max="20" step="0.5" value="3"><span class="v" id="fadeV">3%</span></div>
-      <div class="note" data-i="outNote">블러를 0으로 두면 입력한 Step이 100% 재현됩니다. 블러를 키우면 매끈해지지만 경계가 조금 어긋날 수 있습니다. 바깥 페이드는 가장 큰 Step 바깥쪽이 0으로 줄어드는 거리(이미지 긴 변 대비)이며, 가장 낮은 임계값이 0이면 필요 없어 비활성화됩니다.</div>
+      <div class="note" data-i="outNote">블러를 0으로 두면 입력한 Step이 100% 재현됩니다. 블러를 키우면 매끈해지지만 경계가 조금 어긋날 수 있습니다. 바깥 페이드는 가장 큰 Step 바깥쪽이 0으로 줄어드는 거리(이미지 긴 변 대비)이며, 가장 낮은 임계값이 1/255 이하이면 필요 없어 비활성화됩니다.</div>
       <div style="margin-top:10px"><button class="primary" id="dl" disabled data-i="save">PNG 저장</button></div>
     </div>
   </div>
@@ -123,6 +125,8 @@ th{color:var(--dim);font-weight:500}
 "use strict";
 const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); // 파일명 등 HTML 이스케이프
+const T0=1/255; // Auto 첫 임계값: 엔진의 step(G>=t)에서도 배경(0)이 검정으로 남도록 0보다 한 단계 위
 const yieldUI=()=>new Promise(r=>setTimeout(r,0));
 
 /* ---------- i18n (ko / en) ---------- */
@@ -134,21 +138,22 @@ const I18N={
   mArea:'흰색 면적 기준', mName:'파일명', mNameDesc:'파일명 역순',
   hOut:'출력 옵션', bitDepth:'비트 깊이', b8:'8비트', b16:'16비트', scale:'출력 배율',
   curve:'보간 곡선', cLin:'선형', cSmooth:'스무스스텝', blur:'블러(σ px)', fade:'바깥 페이드',
-  outNote:'블러를 0으로 두면 입력한 Step이 100% 재현됩니다. 블러를 키우면 매끈해지지만 경계가 조금 어긋날 수 있습니다. 바깥 페이드는 가장 큰 Step 바깥쪽이 0으로 줄어드는 거리(이미지 긴 변 대비)이며, 가장 낮은 임계값이 0이면 필요 없어 비활성화됩니다.',
+  outNote:'블러를 0으로 두면 입력한 Step이 100% 재현됩니다. 블러를 키우면 매끈해지지만 경계가 조금 어긋날 수 있습니다. 바깥 페이드는 가장 큰 Step 바깥쪽이 0으로 줄어드는 거리(이미지 긴 변 대비)이며, 가장 낮은 임계값이 1/255 이하이면 필요 없어 비활성화됩니다.',
   save:'PNG 저장', hTest:'소멸(Dissolve) 테스트 · step(Result, t)', play:'▶ 재생', stop:'■ 정지',
   hChk:'재현 검증 (결과에 입력 임계값으로 step을 다시 적용했을 때 일치율)',
   thStep:'Step', thT:'임계값', thM:'일치율', addImgs:'이미지를 추가하세요.',
   noteManual:'수동: 각 Step의 임계값을 직접 입력하세요. 목록은 임계값 순으로 정렬됩니다.',
-  noteArea:'Auto: 흰 영역이 넓은 이미지부터 낮은 임계값을 배정합니다. (N장 → 0, 1/N, 2/N, …, (N-1)/N)',
-  noteName:'Auto: 파일명 순으로 낮은 임계값부터 배정합니다. (N장 → 0, 1/N, 2/N, …, (N-1)/N)',
-  noteNameDesc:'Auto: 파일명 역순으로 낮은 임계값부터 배정합니다. (N장 → 0, 1/N, 2/N, …, (N-1)/N)',
+  noteArea:'Auto: 흰 영역이 넓은 이미지부터 낮은 임계값을 배정합니다. (N장 → 1/255, 1/N, 2/N, …, (N-1)/N)',
+  noteName:'Auto: 파일명 순으로 낮은 임계값부터 배정합니다. (N장 → 1/255, 1/N, 2/N, …, (N-1)/N)',
+  noteNameDesc:'Auto: 파일명 역순으로 낮은 임계값부터 배정합니다. (N장 → 1/255, 1/N, 2/N, …, (N-1)/N)',
   outSize:'저장 크기: {w}×{h}px', outOrig:' (원본 {w}×{h})',
   analyzing:'분석 중… {n}', computing:'계산 중…', applying:'배율 적용 중…', encoding:'PNG 인코딩 중…',
   infoSteps:'Step {n}장', infoResized:' · {n}장이 가장 큰 이미지 크기로 리사이즈됨',
   infoScaled:' (입력 {w}×{h} 기준 ×{s})', itemWhite:' · 흰색 {p}%',
   thrTitle:'임계값 (0~1)', delTitle:'삭제',
   warnNest:'"{a}"의 흰 영역이 더 낮은 임계값 Step("{b}")에 완전히 포함되지 않습니다. 임계값 순서나 이미지를 확인하세요.',
-  warnSame:'임계값이 같은 Step이 있습니다.'
+  warnSame:'임계값이 같은 Step이 있습니다.',
+  loadFail:'불러오지 못한 파일: {n} — PNG, JPG, WebP, BMP, GIF 형식만 지원합니다.'
  },
  en:{
   by:'Created by Lee SangWon', hStep:'STEP IMAGES',
@@ -157,21 +162,22 @@ const I18N={
   mArea:'White area', mName:'Filename', mNameDesc:'Filename (reverse)',
   hOut:'OUTPUT OPTIONS', bitDepth:'Bit depth', b8:'8-bit', b16:'16-bit', scale:'Output scale',
   curve:'Interpolation', cLin:'Linear', cSmooth:'Smoothstep', blur:'Blur (σ px)', fade:'Outer fade',
-  outNote:'With blur set to 0, your input steps are reproduced exactly. A higher blur gives a smoother gradient but can shift edges slightly. Outer fade is the distance over which the outside of the largest Step falls to 0 (relative to the image\'s long side); it is disabled when the lowest threshold is 0.',
+  outNote:'With blur set to 0, your input steps are reproduced exactly. A higher blur gives a smoother gradient but can shift edges slightly. Outer fade is the distance over which the outside of the largest Step falls to 0 (relative to the image\'s long side); it is disabled when the lowest threshold is 1/255 or less.',
   save:'Save PNG', hTest:'Dissolve test · step(Result, t)', play:'▶ Play', stop:'■ Stop',
   hChk:'Round-trip check (match rate when step is re-applied to the result at the input thresholds)',
   thStep:'Step', thT:'Threshold', thM:'Match', addImgs:'Add images.',
   noteManual:'Manual: enter each Step\'s threshold yourself. The list is sorted by threshold.',
-  noteArea:'Auto: the image with the largest white area gets the lowest threshold. (N images → 0, 1/N, 2/N, …, (N-1)/N)',
-  noteName:'Auto: thresholds are assigned from lowest to highest in filename order. (N images → 0, 1/N, 2/N, …, (N-1)/N)',
-  noteNameDesc:'Auto: thresholds are assigned from lowest to highest in reverse filename order. (N images → 0, 1/N, 2/N, …, (N-1)/N)',
+  noteArea:'Auto: the image with the largest white area gets the lowest threshold. (N images → 1/255, 1/N, 2/N, …, (N-1)/N)',
+  noteName:'Auto: thresholds are assigned from lowest to highest in filename order. (N images → 1/255, 1/N, 2/N, …, (N-1)/N)',
+  noteNameDesc:'Auto: thresholds are assigned from lowest to highest in reverse filename order. (N images → 1/255, 1/N, 2/N, …, (N-1)/N)',
   outSize:'Output size: {w}×{h}px', outOrig:' (source {w}×{h})',
   analyzing:'Analyzing… {n}', computing:'Computing…', applying:'Applying scale…', encoding:'Encoding PNG…',
   infoSteps:'{n} steps', infoResized:' · {n} resized to the largest image size',
   infoScaled:' (×{s} of input {w}×{h})', itemWhite:' · white {p}%',
   thrTitle:'Threshold (0–1)', delTitle:'Remove',
   warnNest:'The white area of "{a}" is not fully contained in the lower-threshold step "{b}". Check the threshold order or the images.',
-  warnSame:'Two steps share the same threshold.'
+  warnSame:'Two steps share the same threshold.',
+  loadFail:'Could not load: {n} — supported formats are PNG, JPG, WebP, BMP and GIF.'
  }
 };
 let LANG='ko';
@@ -188,13 +194,13 @@ function applyLang(){
   document.querySelectorAll('[data-i]').forEach(el=>{el.innerHTML=t(el.dataset.i);});
   $('#play').textContent=t(playing?'stop':'play');
   $('#lang').value=LANG;
-  updateAutoNote(); updateOutSize();
+  updateAutoNote(); updateOutSize(); showLoadMsg();
   if(items.length){ renderList(); scheduleRender(); }
   else $('#chk').innerHTML=`<tr><td class="note">${t('addImgs')}</td></tr>`;
 }
 
 
-let items=[], nextId=1, refW=0, refH=0, lastG=null, lastW=0, lastH=0, lastOut=null, outW=0, outH=0, infoExtra='', renderToken=0, renderTimer=null;
+let items=[], nextId=1, prepGen=0, prepRunning=false, loadFails=[], refW=0, refH=0, lastG=null, lastW=0, lastH=0, lastOut=null, outW=0, outH=0, infoExtra='', renderToken=0, renderTimer=null;
 
 /* ---------- Euclidean distance transform (Felzenszwalb) ---------- */
 const INF=1e12;
@@ -297,15 +303,17 @@ async function encodePNG(G,w,h,bits){
 
 /* ---------- image loading / preparation ---------- */
 async function addFiles(files){
+  const failed=[];
   for(const f of files){
-    if(!f.type.startsWith('image/')) continue;
     try{
-      const bmp=await createImageBitmap(f);
+      const bmp=await createImageBitmap(f); // TGA/PSD/EXR 등 브라우저가 해석 못하는 파일은 여기서 실패
       items.push({id:nextId++,name:f.name,bmp,t:0.5,mw:0,mh:0,mask:null,sdf:null,area:0,thumb:''});
-    }catch(e){ console.warn('Load failed',f.name,e); }
+    }catch(e){ failed.push(f.name); }
   }
+  loadFails=failed; showLoadMsg();
   await prepare();
 }
+function showLoadMsg(){ $('#loadMsg').innerHTML=loadFails.length?'⚠ '+esc(t('loadFail',{n:loadFails.join(', ')})):''; }
 
 /* ---------- output scale ---------- */
 function getScale(){
@@ -336,33 +344,43 @@ function resample(G,w,h,nw,nh){ // 바이리니어 (픽셀 중심 정렬)
 }
 
 async function prepare(){
-  if(!items.length){refW=refH=0;renderList();scheduleRender();return;}
-  let best=items[0];
-  for(const it of items) if(it.bmp.width*it.bmp.height>best.bmp.width*best.bmp.height) best=it;
-  refW=best.bmp.width; refH=best.bmp.height;
-  const cv=document.createElement('canvas'); cv.width=refW; cv.height=refH;
+  const gen=++prepGen; // 새 분석이 시작되면 이전 분석은 다음 대기 지점에서 스스로 중단
+  $('#dl').disabled=true;
+  if(!items.length){refW=refH=0;prepRunning=false;$('#status').textContent='';renderList();scheduleRender();return;}
+  prepRunning=true;
+  const list=items.slice();
+  let best=list[0];
+  for(const it of list) if(it.bmp.width*it.bmp.height>best.bmp.width*best.bmp.height) best=it;
+  const W=best.bmp.width, H=best.bmp.height; // 이 분석 회차의 기준 크기 (전역값 변경에 영향받지 않음)
+  refW=W; refH=H;
+  renderList();
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
   const cx=cv.getContext('2d',{willReadFrequently:true});
-  for(const it of items){
-    if(it.mask && it.mw===refW && it.mh===refH) continue;
+  for(const it of list){
+    if(gen!==prepGen) return;
+    if(it.mask && it.mw===W && it.mh===H) continue;
     $('#status').textContent=t('analyzing',{n:it.name}); await yieldUI();
-    cx.fillStyle='#000'; cx.fillRect(0,0,refW,refH);
+    if(gen!==prepGen) return;
+    cx.fillStyle='#000'; cx.fillRect(0,0,W,H);
     cx.imageSmoothingEnabled=true; cx.imageSmoothingQuality='high';
-    cx.drawImage(it.bmp,0,0,refW,refH);
-    const d=cx.getImageData(0,0,refW,refH).data, n=refW*refH, mask=new Uint8Array(n);
+    cx.drawImage(it.bmp,0,0,W,H);
+    const d=cx.getImageData(0,0,W,H).data, n=W*H, mask=new Uint8Array(n);
     let cnt=0;
     for(let i=0;i<n;i++){
       const lum=(0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2])*(d[i*4+3]/255);
       if(lum>127.5){mask[i]=1;cnt++;}
     }
-    it.mask=mask; it.mw=refW; it.mh=refH; it.area=cnt/n;
-    it.sdf=computeSDF(mask,refW,refH);
+    it.mask=mask; it.mw=W; it.mh=H; it.area=cnt/n;
+    it.sdf=computeSDF(mask,W,H);
     // thumbnail
-    const tc=document.createElement('canvas'), sc=Math.min(1,104/Math.max(refW,refH));
-    tc.width=Math.max(1,Math.round(refW*sc)); tc.height=Math.max(1,Math.round(refH*sc));
+    const tc=document.createElement('canvas'), sc=Math.min(1,104/Math.max(W,H));
+    tc.width=Math.max(1,Math.round(W*sc)); tc.height=Math.max(1,Math.round(H*sc));
     const tx=tc.getContext('2d'); tx.drawImage(cv,0,0,tc.width,tc.height);
     it.thumb=tc.toDataURL();
     await yieldUI();
   }
+  if(gen!==prepGen) return;
+  prepRunning=false;
   $('#status').textContent='';
   renderList(); scheduleRender();
 }
@@ -374,7 +392,7 @@ function autoOrder(){ // Auto 방식: 선택한 기준으로 정렬 후 1/(N+1),
   if(m==='area') arr.sort((a,b)=>b.area-a.area||byName(a,b)); // 흰 영역이 넓을수록 낮은 임계값
   else if(m==='name') arr.sort(byName);                       // A→Z : 낮은 임계값 → 높은 임계값
   else arr.sort((a,b)=>byName(b,a));                          // Z→A
-  return arr.map((it,i)=>({item:it,t:i/arr.length})); // 0, 1/N, 2/N, …, (N-1)/N
+  return arr.map((it,i)=>({item:it,t:i===0?T0:i/arr.length})); // 1/255, 1/N, 2/N, …, (N-1)/N
 }
 function computeOrder(){ // 결과는 항상 임계값 오름차순 (목록 표시 순서와 동일)
   if($('#auto').checked) return autoOrder();
@@ -404,8 +422,8 @@ function renderList(){
   for(const {item:it} of order){
     const d=document.createElement('div'); d.className='item'; d.dataset.id=it.id;
     const resized=(it.bmp.width!==refW||it.bmp.height!==refH);
-    d.innerHTML=`<img src="${it.thumb}" alt=""><div class="meta"><div class="nm" title="${it.name}">${it.name}</div>
-      <div class="sub">${it.bmp.width}×${it.bmp.height}${resized?' → '+refW+'×'+refH:''}${t('itemWhite',{p:(it.area*100).toFixed(1)})}</div></div>
+    d.innerHTML=`${it.thumb?`<img src="${it.thumb}" alt="">`:'<span class="ph"></span>'}<div class="meta"><div class="nm" title="${esc(it.name)}">${esc(it.name)}</div>
+      <div class="sub">${it.bmp.width}×${it.bmp.height}${resized?' → '+refW+'×'+refH:''}${t('itemWhite',{p:it.mask?(it.area*100).toFixed(1):'…'})}</div></div>
       <input type="number" min="0" max="1" step="0.01" value="${(tmap.get(it.id)??0).toFixed(3)}" ${auto?'disabled':''} title="${t('thrTitle')}">
       <button class="x" title="${t('delTitle')}">✕</button>`;
     d.querySelector('input').addEventListener('input',e=>{
@@ -413,7 +431,7 @@ function renderList(){
     });
     d.querySelector('input').addEventListener('change',reorderList);
     d.querySelector('button').addEventListener('click',async()=>{
-      items=items.filter(x=>x!==it); await prepare();
+      items=items.filter(x=>x!==it); try{it.bmp.close();}catch(_){} await prepare();
     });
     el.appendChild(d);
   }
@@ -447,10 +465,11 @@ function compose(order,W,H,opt){
 }
 
 /* ---------- render pipeline ---------- */
-function scheduleRender(){ clearTimeout(renderTimer); renderTimer=setTimeout(render,120); }
+function scheduleRender(){ $('#dl').disabled=true; clearTimeout(renderTimer); renderTimer=setTimeout(render,120); } // 계산이 끝날 때까지 저장 금지
 async function render(){
   const token=++renderToken;
   const info=$('#info'), warn=$('#warn'), chk=$('#chk');
+  if(prepRunning) return; // 분석 중에는 이전 결과를 그대로 두고, 분석이 끝나면 다시 렌더
   warn.textContent='';
   if(!items.length||!items.every(i=>i.sdf&&i.mw===refW&&i.mh===refH)){
     lastG=null; lastOut=null; $('#dl').disabled=true; info.textContent=''; updateOutSize();
@@ -463,8 +482,9 @@ async function render(){
   if(token!==renderToken) return;
   const bits=+document.querySelector('input[name=bits]:checked').value, maxV=bits===16?65535:255;
   const order=computeOrder(), W=refW, H=refH;
-  $('#fade').disabled=order[0].t<=0; // 가장 낮은 임계값이 0이면 바깥 페이드 불필요
-  let G=compose(order,W,H,{m:1/maxV,smooth:$('#curve').value==='smooth',fadePct:+$('#fade').value});
+  const noFade=order[0].t<=T0+1e-9; // 가장 낮은 임계값이 1/255 이하이면 바깥 페이드 불필요 (배경은 완전한 0)
+  $('#fade').disabled=noFade;
+  let G=compose(order,W,H,{m:1/maxV,smooth:$('#curve').value==='smooth',fadePct:noFade?0:+$('#fade').value});
   G=gblur(G,W,H,+$('#blur').value);
   if(token!==renderToken) return;
   lastG=G; lastW=W; lastH=H;
@@ -479,7 +499,7 @@ async function render(){
   for(let k=1;k<order.length;k++){
     const A=order[k-1].item.mask,B=order[k].item.mask; let bad=0;
     for(let i=0;i<A.length;i++) if(B[i]&&!A[i]) bad++;
-    if(bad/A.length>0.001){msgs.push(t('warnNest',{a:order[k].item.name,b:order[k-1].item.name}));}
+    if(bad/A.length>0.001){msgs.push(t('warnNest',{a:esc(order[k].item.name),b:esc(order[k-1].item.name)}));}
     if(!$('#auto').checked && order[k].t===order[k-1].t) msgs.push(t('warnSame'));
   }
   warn.innerHTML=msgs.map(s=>'⚠ '+s).join('<br>');
@@ -488,7 +508,7 @@ async function render(){
   for(const o of order){
     const T=Math.round(o.t*maxV), mk=o.item.mask; let miss=0;
     for(let i=0;i<G.length;i++){ const on=Math.round(G[i]*maxV)>T?1:0; if(on!==mk[i]) miss++; }
-    html+=`<tr><td>${o.item.name}</td><td>${o.t.toFixed(3)}</td><td>${(100-miss/G.length*100).toFixed(3)}%</td></tr>`;
+    html+=`<tr><td>${esc(o.item.name)}</td><td>${o.t.toFixed(3)}</td><td>${(100-miss/G.length*100).toFixed(3)}%</td></tr>`;
   }
   chk.innerHTML=html;
   updateOutSize();
@@ -520,10 +540,10 @@ function drawResult(){
 }
 function drawTest(){
   if(!lastOut) return; // 출력 배율이 적용된 RESULT 기준
-  const t=$('#tt').value/1000; $('#ttV').textContent=t.toFixed(3);
+  const th=$('#tt').value/1000; $('#ttV').textContent=th.toFixed(3); // (t 는 번역 함수 이름)
   const c=$('#tst'); if(c.width!==outW||c.height!==outH){c.width=outW;c.height=outH;}
   const cx=c.getContext('2d'), id=cx.createImageData(outW,outH), d=id.data;
-  for(let i=0;i<lastOut.length;i++){const v=lastOut[i]>t?255:0;d[i*4]=d[i*4+1]=d[i*4+2]=v;d[i*4+3]=255;}
+  for(let i=0;i<lastOut.length;i++){const v=lastOut[i]>th?255:0;d[i*4]=d[i*4+1]=d[i*4+2]=v;d[i*4+3]=255;}
   cx.putImageData(id,0,0);
 }
 
@@ -545,7 +565,7 @@ $('#auto').addEventListener('change',()=>{
 });
 $('#method').addEventListener('change',()=>{updateAutoNote();renderList();scheduleRender();});
 updateAutoNote();
-$('#clear').addEventListener('click',async()=>{items=[];await prepare();});
+$('#clear').addEventListener('click',async()=>{for(const it of items){try{it.bmp.close();}catch(_){}} items=[]; loadFails=[]; showLoadMsg(); await prepare();});
 $('#scale').addEventListener('input',()=>{updateOutSize();clearTimeout(scaleTimer);scaleTimer=setTimeout(applyScale,400);});
 $('#scale').addEventListener('change',()=>{
   clearTimeout(scaleTimer);
@@ -558,20 +578,20 @@ $('#blur').addEventListener('input',e=>{$('#blurV').textContent=e.target.value;s
 $('#fade').addEventListener('input',e=>{$('#fadeV').textContent=e.target.value+'%';scheduleRender();});
 $('#tt').addEventListener('input',drawTest);
 
-let playing=false;
+let playing=false, playId=0;
 $('#play').addEventListener('click',()=>{
   playing=!playing; $('#play').textContent=t(playing?'stop':'play');
   if(!playing) return;
-  const t0=performance.now(), from=+$('#tt').value;
+  const id=++playId, t0=performance.now(), from=+$('#tt').value; // 빠르게 정지→재생해도 루프가 겹치지 않도록
   (function loop(now){
-    if(!playing) return;
+    if(!playing||id!==playId) return;
     const p=((now-t0)/3500+from/1000)%1;
     $('#tt').value=Math.round(p*1000); drawTest(); requestAnimationFrame(loop);
   })(performance.now());
 });
 
 $('#dl').addEventListener('click',async()=>{
-  if(!lastG) return;
+  if(!lastG||$('#dl').disabled) return;
   const bits=+document.querySelector('input[name=bits]:checked').value;
   $('#status').textContent=t('encoding'); await yieldUI();
   const {nw,nh}=outDims();
