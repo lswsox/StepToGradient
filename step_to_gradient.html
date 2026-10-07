@@ -15,6 +15,9 @@ header h1{margin:0;font-size:17px;font-weight:600}
 .brand img{display:block;flex:none}
 @media(max-width:560px){.brand img{width:44px;height:44px}.brand{gap:10px}}
 .langbox{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12.5px;white-space:nowrap;cursor:default}
+.hright{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.fblink{color:var(--dim);font-size:12.5px;text-decoration:none;white-space:nowrap}
+.fblink:hover,.fblink:focus-visible{color:var(--fg);text-decoration:underline}
 header h1 .ver{margin-left:6px;font-size:12px;font-weight:500;color:var(--dim)}
 header p{margin:2px 0 0;color:var(--dim);font-size:12.5px}
 main{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
@@ -63,7 +66,10 @@ th{color:var(--dim);font-weight:500}
   <p data-i="by">제작: 이상원</p>
   </div>
   </div>
+  <div class="hright">
+  <a class="fblink" href="https://cafe.naver.com/pinksox/9264" target="_blank" rel="noopener noreferrer">Feedback &amp; suggestions &#8599;</a>
   <label class="langbox">Language: <select id="lang"><option value="ko">한국어</option><option value="en">English</option></select></label>
+  </div>
 </header>
 <main>
   <div class="side">
