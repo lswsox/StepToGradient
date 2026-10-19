@@ -29,6 +29,12 @@ main{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
 #drop.over{border-color:var(--acc);color:var(--fg)}
 .row{display:flex;align-items:center;gap:8px}
 .item{display:flex;align-items:center;gap:10px;padding:6px;border:1px solid var(--line);border-radius:6px;margin-top:6px;background:#191c21}
+.item .grip{flex:none;width:14px;height:12px;cursor:grab;opacity:.6;background:linear-gradient(currentColor,currentColor) 0 0/100% 2px no-repeat,linear-gradient(currentColor,currentColor) 0 5px/100% 2px no-repeat,linear-gradient(currentColor,currentColor) 0 10px/100% 2px no-repeat;color:var(--fg)}
+.item.drag{cursor:grab}
+.item.drag:hover .grip{opacity:1}
+.item.dragging{opacity:.4}
+.item.dropBefore{box-shadow:0 -3px 0 0 var(--acc)}
+.item.dropAfter{box-shadow:0 3px 0 0 var(--acc)}
 .item img{width:52px;height:52px;object-fit:contain;background:#000;border-radius:4px;flex:none}
 .item .ph{width:52px;height:52px;background:#000;border-radius:4px;flex:none}
 .item .meta{flex:1;min-width:0}
@@ -87,6 +93,7 @@ th{color:var(--dim);font-weight:500}
           <option value="area" data-i="mArea">흰색 면적 기준</option>
           <option value="name" data-i="mName">파일명</option>
           <option value="nameDesc" data-i="mNameDesc">파일명 역순</option>
+          <option value="manual" data-i="mManual">수동</option>
         </select></div>
       <div class="note" id="autoNote"></div>
       <div id="list"></div>
@@ -141,7 +148,7 @@ const I18N={
   by:'제작: 이상원', hStep:'STEP 이미지',
   drop:'여기에 이미지를 드래그 앤 드롭<br>또는 클릭해서 선택 (여러 장)',
   autoLabel:'Auto 임계값 (균등 분배)', clear:'전체 삭제', method:'임계값 부여 방식',
-  mArea:'흰색 면적 기준', mName:'파일명', mNameDesc:'파일명 역순',
+  mArea:'흰색 면적 기준', mName:'파일명', mNameDesc:'파일명 역순', mManual:'수동',
   hOut:'출력 옵션', bitDepth:'비트 깊이', b8:'8비트', b16:'16비트', scale:'출력 배율',
   curve:'보간 곡선', cLin:'선형', cSmooth:'스무스스텝', blur:'블러(σ px)', fade:'바깥 페이드',
   outNote:'블러를 0으로 두면 입력한 Step이 100% 재현됩니다. 블러를 키우면 매끈해지지만 경계가 조금 어긋날 수 있습니다. 바깥 페이드는 가장 큰 Step 바깥쪽이 0으로 줄어드는 거리(이미지 긴 변 대비)이며, 가장 낮은 임계값이 1/255 이하이면 필요 없어 비활성화됩니다.',
@@ -152,6 +159,8 @@ const I18N={
   noteArea:'Auto: 흰 영역이 넓은 이미지부터 낮은 임계값을 배정합니다. (N장 → 1/255, 1/N, 2/N, …, (N-1)/N)',
   noteName:'Auto: 파일명 순으로 낮은 임계값부터 배정합니다. (N장 → 1/255, 1/N, 2/N, …, (N-1)/N)',
   noteNameDesc:'Auto: 파일명 역순으로 낮은 임계값부터 배정합니다. (N장 → 1/255, 1/N, 2/N, …, (N-1)/N)',
+  noteOrder:'Auto: 목록을 마우스로 드래그해 순서를 정하면, 위에서부터 낮은 임계값을 배정합니다. 임계값은 자리에 고정되고 이미지만 바뀝니다. (N장 → 1/255, 1/N, 2/N, …, (N-1)/N)',
+  dragTitle:'드래그해서 순서 변경',
   outSize:'저장 크기: {w}×{h}px', outOrig:' (원본 {w}×{h})',
   analyzing:'분석 중… {n}', computing:'계산 중…', applying:'배율 적용 중…', encoding:'PNG 인코딩 중…',
   infoSteps:'Step {n}장', infoResized:' · {n}장이 가장 큰 이미지 크기로 리사이즈됨',
@@ -165,7 +174,7 @@ const I18N={
   by:'Created by Lee SangWon', hStep:'STEP IMAGES',
   drop:'Drag &amp; drop images here<br>or click to select (multiple)',
   autoLabel:'Auto thresholds (evenly spaced)', clear:'Clear all', method:'Threshold assignment',
-  mArea:'White area', mName:'Filename', mNameDesc:'Filename (reverse)',
+  mArea:'White area', mName:'Filename', mNameDesc:'Filename (reverse)', mManual:'Manual',
   hOut:'OUTPUT OPTIONS', bitDepth:'Bit depth', b8:'8-bit', b16:'16-bit', scale:'Output scale',
   curve:'Interpolation', cLin:'Linear', cSmooth:'Smoothstep', blur:'Blur (σ px)', fade:'Outer fade',
   outNote:'With blur set to 0, your input steps are reproduced exactly. A higher blur gives a smoother gradient but can shift edges slightly. Outer fade is the distance over which the outside of the largest Step falls to 0 (relative to the image\'s long side); it is disabled when the lowest threshold is 1/255 or less.',
@@ -176,6 +185,8 @@ const I18N={
   noteArea:'Auto: the image with the largest white area gets the lowest threshold. (N images → 1/255, 1/N, 2/N, …, (N-1)/N)',
   noteName:'Auto: thresholds are assigned from lowest to highest in filename order. (N images → 1/255, 1/N, 2/N, …, (N-1)/N)',
   noteNameDesc:'Auto: thresholds are assigned from lowest to highest in reverse filename order. (N images → 1/255, 1/N, 2/N, …, (N-1)/N)',
+  noteOrder:'Auto: drag the list with the mouse to set the order; thresholds are assigned from lowest at the top. Thresholds stay in place and only the images move. (N images → 1/255, 1/N, 2/N, …, (N-1)/N)',
+  dragTitle:'Drag to reorder',
   outSize:'Output size: {w}×{h}px', outOrig:' (source {w}×{h})',
   analyzing:'Analyzing… {n}', computing:'Computing…', applying:'Applying scale…', encoding:'Encoding PNG…',
   infoSteps:'{n} steps', infoResized:' · {n} resized to the largest image size',
@@ -206,6 +217,7 @@ function applyLang(){
 }
 
 
+let manualOrder=[], prevMethod='area', dragId=null;
 let items=[], nextId=1, prepGen=0, prepRunning=false, loadFails=[], refW=0, refH=0, lastG=null, lastW=0, lastH=0, lastOut=null, outW=0, outH=0, infoExtra='', renderToken=0, renderTimer=null;
 
 /* ---------- Euclidean distance transform (Felzenszwalb) ---------- */
@@ -397,7 +409,12 @@ function autoOrder(){ // Auto 방식: 선택한 기준으로 정렬 후 1/(N+1),
   const arr=items.slice(), m=$('#method').value;
   if(m==='area') arr.sort((a,b)=>b.area-a.area||byName(a,b)); // 흰 영역이 넓을수록 낮은 임계값
   else if(m==='name') arr.sort(byName);                       // A→Z : 낮은 임계값 → 높은 임계값
-  else arr.sort((a,b)=>byName(b,a));                          // Z→A
+  else if(m==='nameDesc') arr.sort((a,b)=>byName(b,a));      // Z→A
+  else { // 수동: 드래그로 정한 순서. 새로 추가된 이미지는 추가된 순서대로 맨 아래에 붙는다
+    const pos=new Map(manualOrder.map((id,i)=>[id,i]));
+    arr.sort((a,b)=>(pos.get(a.id)??1e9)-(pos.get(b.id)??1e9)||a.id-b.id);
+    manualOrder=arr.map(it=>it.id);
+  }
   return arr.map((it,i)=>({item:it,t:i===0?T0:i/arr.length})); // 1/255, 1/N, 2/N, …, (N-1)/N
 }
 function computeOrder(){ // 결과는 항상 임계값 오름차순 (목록 표시 순서와 동일)
@@ -418,6 +435,7 @@ function updateAutoNote(){
   $('#autoNote').textContent=!auto?t('noteManual')
     :m==='area'?t('noteArea')
     :m==='name'?t('noteName')
+    :m==='manual'?t('noteOrder')
     :t('noteNameDesc');
 }
 
@@ -425,10 +443,11 @@ function updateAutoNote(){
 function renderList(){
   const el=$('#list'); el.innerHTML='';
   const auto=$('#auto').checked, order=computeOrder(), tmap=new Map(order.map(o=>[o.item.id,o.t]));
+  const canDrag=auto&&$('#method').value==='manual';
   for(const {item:it} of order){
-    const d=document.createElement('div'); d.className='item'; d.dataset.id=it.id;
+    const d=document.createElement('div'); d.className='item'+(canDrag?' drag':''); d.dataset.id=it.id;
     const resized=(it.bmp.width!==refW||it.bmp.height!==refH);
-    d.innerHTML=`${it.thumb?`<img src="${it.thumb}" alt="">`:'<span class="ph"></span>'}<div class="meta"><div class="nm" title="${esc(it.name)}">${esc(it.name)}</div>
+    d.innerHTML=`${canDrag?`<span class="grip" title="${t('dragTitle')}"></span>`:''}${it.thumb?`<img src="${it.thumb}" alt="">`:'<span class="ph"></span>'}<div class="meta"><div class="nm" title="${esc(it.name)}">${esc(it.name)}</div>
       <div class="sub">${it.bmp.width}×${it.bmp.height}${resized?' → '+refW+'×'+refH:''}${t('itemWhite',{p:it.mask?(it.area*100).toFixed(1):'…'})}</div></div>
       <input type="number" min="0" max="1" step="0.01" value="${(tmap.get(it.id)??0).toFixed(3)}" ${auto?'disabled':''} title="${t('thrTitle')}">
       <button class="x" title="${t('delTitle')}">✕</button>`;
@@ -439,8 +458,36 @@ function renderList(){
     d.querySelector('button').addEventListener('click',async()=>{
       items=items.filter(x=>x!==it); try{it.bmp.close();}catch(_){} await prepare();
     });
+    if(canDrag){ d.draggable=true; d.title=t('dragTitle'); }
     el.appendChild(d);
   }
+}
+/* 수동 순서: 행 드래그 (임계값은 자리에 고정, 이미지만 이동) */
+function clearDropMarks(){ for(const n of $('#list').children) n.classList.remove('dropBefore','dropAfter'); }
+function dropSide(row,e){ const r=row.getBoundingClientRect(); return e.clientY<r.top+r.height/2?'before':'after'; }
+{
+  const L=$('#list');
+  L.addEventListener('dragstart',e=>{
+    const row=e.target.closest&&e.target.closest('.item.drag'); if(!row) return;
+    dragId=+row.dataset.id; row.classList.add('dragging');
+    e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',row.dataset.id);
+  });
+  L.addEventListener('dragover',e=>{
+    if(dragId===null) return;
+    e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect='move';
+    const row=e.target.closest('.item'); clearDropMarks();
+    if(row&&+row.dataset.id!==dragId) row.classList.add(dropSide(row,e)==='before'?'dropBefore':'dropAfter');
+  });
+  L.addEventListener('drop',e=>{
+    if(dragId===null) return;
+    e.preventDefault(); e.stopPropagation();
+    const row=e.target.closest('.item'); clearDropMarks();
+    if(!row||+row.dataset.id===dragId) return;
+    const ids=manualOrder.filter(id=>id!==dragId), tid=+row.dataset.id;
+    ids.splice(ids.indexOf(tid)+(dropSide(row,e)==='after'?1:0),0,dragId);
+    manualOrder=ids; renderList(); scheduleRender();
+  });
+  L.addEventListener('dragend',()=>{ dragId=null; clearDropMarks(); for(const n of L.children) n.classList.remove('dragging'); });
 }
 
 /* ---------- compose gradient ---------- */
@@ -560,11 +607,11 @@ function drawTest(){
 const drop=$('#drop'), fileIn=$('#file');
 drop.addEventListener('click',()=>fileIn.click());
 fileIn.addEventListener('change',async e=>{await addFiles([...e.target.files]);fileIn.value='';});
-['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();if(dragId===null)drop.classList.add('over');}));
 ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
-drop.addEventListener('drop',e=>addFiles([...e.dataTransfer.files]));
+drop.addEventListener('drop',e=>{if(dragId===null)addFiles([...e.dataTransfer.files]);});
 window.addEventListener('dragover',e=>e.preventDefault());
-window.addEventListener('drop',e=>{e.preventDefault(); if(!drop.contains(e.target)) addFiles([...e.dataTransfer.files]);});
+window.addEventListener('drop',e=>{e.preventDefault(); if(dragId===null&&!drop.contains(e.target)) addFiles([...e.dataTransfer.files]);});
 
 $('#auto').addEventListener('change',()=>{
   if(!$('#auto').checked){ // 수동 전환 시 현재 Auto 값을 초기값으로 복사
@@ -572,7 +619,13 @@ $('#auto').addEventListener('change',()=>{
   }
   updateAutoNote(); renderList(); scheduleRender();
 });
-$('#method').addEventListener('change',()=>{updateAutoNote();renderList();scheduleRender();});
+$('#method').addEventListener('change',()=>{
+  const m=$('#method').value;
+  if(m==='manual'&&prevMethod!=='manual'){ // 수동 전환 시 직전 방식의 순서를 시작점으로 사용
+    const cur=$('#method'); cur.value=prevMethod; manualOrder=autoOrder().map(o=>o.item.id); cur.value='manual';
+  }
+  prevMethod=m; updateAutoNote(); renderList(); scheduleRender();
+});
 updateAutoNote();
 $('#clear').addEventListener('click',async()=>{for(const it of items){try{it.bmp.close();}catch(_){}} items=[]; loadFails=[]; showLoadMsg(); await prepare();});
 $('#scale').addEventListener('input',()=>{updateOutSize();clearTimeout(scaleTimer);scaleTimer=setTimeout(applyScale,400);});
