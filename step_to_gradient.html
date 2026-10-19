@@ -157,7 +157,7 @@ const I18N={
   infoSteps:'Step {n}장', infoResized:' · {n}장이 가장 큰 이미지 크기로 리사이즈됨',
   infoScaled:' (입력 {w}×{h} 기준 ×{s})', itemWhite:' · 흰색 {p}%',
   thrTitle:'임계값 (0~1)', delTitle:'삭제',
-  warnNest:'"{a}"의 흰 영역이 더 낮은 임계값 Step("{b}")에 완전히 포함되지 않습니다. 임계값 순서나 이미지를 확인하세요.',
+  noteNest:'일부 Step이 더 낮은 임계값 Step 안에 완전히 포함되지 않아, 낮은 Step부터 밝은 값으로 덮어 칠하는 방식으로 합성했습니다. 이 경우 소멸 테스트의 각 시점 모양은 그 이후 Step들이 합쳐진 형태로 보이며, 검증 일치율이 100%보다 낮을 수 있습니다.',
   warnSame:'임계값이 같은 Step이 있습니다.',
   loadFail:'불러오지 못한 파일: {n} — PNG, JPG, WebP, BMP, GIF 형식만 지원합니다.'
  },
@@ -181,7 +181,7 @@ const I18N={
   infoSteps:'{n} steps', infoResized:' · {n} resized to the largest image size',
   infoScaled:' (×{s} of input {w}×{h})', itemWhite:' · white {p}%',
   thrTitle:'Threshold (0–1)', delTitle:'Remove',
-  warnNest:'The white area of "{a}" is not fully contained in the lower-threshold step "{b}". Check the threshold order or the images.',
+  noteNest:'Some steps are not fully contained in a lower-threshold step, so they were composited by painting brighter values over darker ones from the lowest step up. In this case each moment of the dissolve test shows the union of the later steps, and the match rate may be below 100%.',
   warnSame:'Two steps share the same threshold.',
   loadFail:'Could not load: {n} — supported formats are PNG, JPG, WebP, BMP and GIF.'
  }
@@ -452,7 +452,9 @@ function compose(order,W,H,opt){
   for(let i=0;i<n;i++) if(last[i]>amax) amax=last[i];
   const fade=opt.fadePct/100*Math.max(W,H);
   for(let i=0;i<n;i++){
-    let k=0; while(k<N && sd[k][i]>0) k++;
+    // k-1 = 이 픽셀을 포함하는 가장 높은 임계값 Step. Step이 서로 중첩되지 않아도
+    // 낮은 Step부터 밝기를 높여 가며 덮어 칠한 결과(마지막으로 덮은 값)가 된다.
+    let k=N; while(k>0 && !(sd[k-1][i]>0)) k--;
     let g;
     if(k===0){
       const hi=Math.max(0,ts[0]-m);
@@ -501,14 +503,15 @@ async function render(){
   infoExtra=t('infoSteps',{n:order.length})+(nResized?t('infoResized',{n:nResized}):'');
   refreshInfo();
   // warnings
-  const msgs=[];
+  const msgs=[]; let nonNested=false;
   for(let k=1;k<order.length;k++){
     const A=order[k-1].item.mask,B=order[k].item.mask; let bad=0;
     for(let i=0;i<A.length;i++) if(B[i]&&!A[i]) bad++;
-    if(bad/A.length>0.001){msgs.push(t('warnNest',{a:esc(order[k].item.name),b:esc(order[k-1].item.name)}));}
+    if(bad/A.length>0.001) nonNested=true;
     if(!$('#auto').checked && order[k].t===order[k-1].t) msgs.push(t('warnSame'));
   }
-  warn.innerHTML=msgs.map(s=>'⚠ '+s).join('<br>');
+  warn.innerHTML=msgs.map(s=>'⚠ '+s).join('<br>')
+    +(nonNested?`<div class="note" style="margin-top:${msgs.length?4:0}px">ℹ ${t('noteNest')}</div>`:'');
   // verification
   let html=`<tr><th>${t('thStep')}</th><th>${t('thT')}</th><th>${t('thM')}</th></tr>`;
   for(const o of order){
